@@ -1,6 +1,7 @@
 defmodule WebSockex do
   alias WebSockex.{Utils}
   @handshake_guid "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+  @ping_interval 15_000
 
   @moduledoc ~S"""
   A client handles negotiating the connection, then sending frames, receiving
@@ -653,6 +654,13 @@ defmodule WebSockex do
           {:EXIT, ^parent, reason} ->
             terminate(reason, parent, debug, state)
 
+          :"$websockex_heartbeat" ->
+            {:ok, ping_frame} = WebSockex.Frame.encode_frame({:text, "2"})
+            :ok = WebSockex.Conn.socket_send(state.conn, ping_frame)
+            IO.puts("#{inspect(self())} is seding heartbeat!!!\n")
+            Process.send_after(self(), :"$websockex_heartbeat", @ping_interval)
+            websocket_loop(parent, debug, state)
+
           msg ->
             debug = Utils.sys_debug(debug, {:in, :msg, msg}, state)
             common_handle({:handle_info, msg}, parent, debug, state)
@@ -1038,6 +1046,7 @@ defmodule WebSockex do
           Map.put(state, :module_state, new_module_state)
           |> Map.delete(:reply_fun)
 
+        Process.send_after(self(), :"$websockex_heartbeat", @ping_interval)
         websocket_loop(parent, debug, state)
 
       {:"$EXIT", reason} ->
